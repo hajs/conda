@@ -5,7 +5,7 @@ import os
 import sys
 import stat
 from glob import glob
-from subprocess import call, check_call
+from subprocess import call, check_call, check_output
 from os.path import basename, join, splitext, isdir, isfile
 
 from conda.builder.config import build_prefix, build_python, PY3K
@@ -153,6 +153,15 @@ def mk_relative_osx(path):
     for name in macho.otool(path):
         assert not name.startswith(build_prefix), path
 
+def _get_rpath(f):
+    objdump = external.find_executable("objdump")
+    output = check_output([objdump, "-x", f])
+    for line in output.splitlines():
+        columns = line.split()
+        if columns and columns[0] == "RPATH":
+            return columns[1]
+    return ""
+
 def mk_relative(f):
     assert sys.platform != 'win32'
     if f.startswith('bin/'):
@@ -161,6 +170,10 @@ def mk_relative(f):
     path = join(build_prefix, f)
     if sys.platform.startswith('linux') and is_obj(path):
         rpath = '$ORIGIN/' + utils.rel_lib(f)
+        current_rpath = _get_rpath(path)
+        if "$ORIGIN" in current_rpath:
+            print("skipping relative rpath", current_rpath)
+            return
         chrpath = external.find_executable('chrpath')
         call([chrpath, '-r', rpath, path])
 
